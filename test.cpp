@@ -81,7 +81,6 @@ int main(int argc , char **argv)
                 
                 std::cout << "server: got connection from " << s << '\n' << std::endl;
 
-                
                 // do whatever we want with the connection:
                 handle_connection(client_socket);
         } // while
