@@ -114,18 +114,31 @@ void handle_connection(int client_socket)
         size_t bytes_read;
         int msgsize = 0;
         char actualpath[PATH_MAX + 1];  // +1 is for the null termination character.
-        
+
 
         // read the client's message -- the name of the file to read
+
+        /*
+        -File to read - or socket represented by int.
+
+        -The place in memory where we read the data (buffer indecates the place and + msgsize is the
+        offset - if we read 100 bytes in the first call, in the second read we will write to the place
+        in memory where buffer points to plus(+) msgsize which will increament with each read)
+
+        -The length in bytes of the buffer pointed to by the buf parameter. 
+        (get smaller with reach read to not exicid the size of buffer and the minus(-) 1 is
+        for the null terminator).
+        */
+
         while((bytes_read = read(client_socket, buffer+msgsize, sizeof(buffer)-msgsize-1)) > 0) {
                 msgsize += bytes_read;
-                if(msgsize > BUFSIZE-1 || buffer[msgsize-1] == '\n') break;
+                if(msgsize > BUFSIZE-1 || buffer[msgsize-1] == '\n') break; //if the last char is '\n' we finished the read
         }
         check(bytes_read, "recive error");
         buffer[msgsize-1] = 0; //null terminate the message and remove the \n
 
         std::cout << "REQUEST: " << buffer << std::endl;
-        
+
         fflush(stdout); // makes sure that all the recived data was written.
         // fflush(stdout) checks if there are any data in the buffer that should be written and if so,
         // the underlying syscall is used to write the data to the OS.
@@ -134,4 +147,32 @@ void handle_connection(int client_socket)
         the output buffer and move the buffered data to console (in case of stdout) 
         or disk (in case of file output stream)
         */
+
+        //validity check
+        if(realpath(buffer, actualpath) == NULL)
+        {
+        std::cout << "ERROR: Bad path " << buffer << std::endl;
+        close(client_socket);
+        return;
+        }
+
+
+        //read file and send its contents to client
+        FILE *fp = fopen(actualpath, "r");
+        if(fp == NULL)
+        {
+        std::cout << "ERROR(open): " << buffer << std::endl;
+        close(client_socket);
+        return;
+        }
+
+        //read file contents and send them to client
+        //should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
+        while((bytes_read = fread(buffer, 1, BUFSIZE, fp)) > 0) {
+                std::cout << "sending " << bytes_read << "bytes" << std::endl;
+                write(client_socket, buffer, bytes_read);
+        }
+        close(client_socket);
+        fclose(fp);
+        std::cout << "closing connection" << std::endl;
 }
