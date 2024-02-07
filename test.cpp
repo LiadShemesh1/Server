@@ -11,7 +11,7 @@
 #include <netdb.h>
 
 #define SERVERPORT "8989"  // the port users will be connecting to
-#define BUFSIZE 4096
+#define BUFSIZE 4096  //todo why this size???
 #define SOCKETERROR (-1)
 #define SERVER_BACKLOG 1 // how many pending connections queue will hold
 
@@ -55,9 +55,17 @@ int main(int argc , char **argv)
         check((server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)), 
                 "Failed to create socket");
         
+        // in case of "address already in use":
+        // int yes=1;
+        // if (setsockopt(server_socket,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes) == -1) {
+        //         perror("setsockopt");
+        //         exit(1);
+        // }    
+
         // bind it to the port we passed in to getaddrinfo():
         check(bind(server_socket, res->ai_addr, res->ai_addrlen), 
                 "Bind Failed");
+
         check(listen(server_socket, SERVER_BACKLOG),
                 "Listen Failed");
 
@@ -73,8 +81,7 @@ int main(int argc , char **argv)
                         "Accept Faild");
                 std::cout << "Connected \n" << std::endl;
                 
-
-                // print the client address:
+                // prints the client address:
                 inet_ntop(their_addr.ss_family,
                         get_in_addr((SA*)&their_addr),
                         s, sizeof(s));
@@ -147,7 +154,8 @@ void handle_connection(int client_socket)
         or disk (in case of file output stream)
         */
 
-        //validity check
+        //validity check, checks if the file exist as well
+        //need to replay with an http error 404 if happened
         if(realpath(buffer, actualpath) == NULL)
         {
         std::cout << "ERROR: Bad path " << buffer << std::endl;
