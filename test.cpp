@@ -9,6 +9,8 @@
 #include <limits.h>
 #include <iostream>
 #include <netdb.h>
+#include <pthread.h>
+
 
 #define SERVERPORT "8989"  // the port users will be connecting to
 #define BUFSIZE 4096  //todo why this size???
@@ -21,8 +23,14 @@ typedef struct sockaddr SA;
 typedef struct sockaddr_storage SAS; 
 typedef struct addrinfo ADDINFO;
 
+// a struct used to pass argument to thread.
+struct thread_client_address{
+        int _client_socket;
+        SAS _their_addr;
+};
+
 // here for linking (or compiling), actual implimintation is down.
-void handle_connection(int client_socket);
+void *handle_connection(void* arg);
 // chack is a general "catch error" function. most of the build in socket function return the same values for 
 //seccses and failing (-1). 
 int check(int exp, const char *msg);
@@ -36,7 +44,8 @@ int main(int argc , char **argv)
         socklen_t addr_size;
         SAS their_addr;
         ADDINFO hints, *res;
-        char s[INET6_ADDRSTRLEN];  // taking the maximum size of an address
+        pthread_t ptid; 
+        pthread_mutex_t mutex;
 
         // first, load up address structs with getaddrinfo():
         memset(&hints, 0, sizeof(hints)); // zero out hints; 
@@ -72,7 +81,7 @@ int main(int argc , char **argv)
         freeaddrinfo(res); // free the linked-list
         
         while(true)
-        {
+        {       
                 std::cout << "waiting for connections... \n" << std::endl;
                 addr_size = sizeof(their_addr); // chaeck
                 
@@ -81,15 +90,22 @@ int main(int argc , char **argv)
                         "Accept Faild");
                 std::cout << "Connected \n" << std::endl;
                 
-                // // prints the client address:
-                // inet_ntop(their_addr.ss_family,
-                //         get_in_addr((SA*)&their_addr),
-                //         s, sizeof(s));
-                
-                // std::cout << "server: got connection from " << s << '\n' << std::endl;
+
+                // start mutex:
+                pthread_mutex_lock(&mutex);
+
+                thread_client_address thread_args = {client_socket, their_addr};
+
+                //create a thread to handle the connection:
+                pthread_create(&ptid, NULL, handle_connection, &thread_args);
+
+                pthread_join(ptid, nullptr);
+                //End mutex:
+                pthread_mutex_unlock(&mutex);
+                std::cout << "thread \n" << std::endl;
 
                 // do whatever we want with the connection:
-                handle_connection(client_socket);
+                //handle_connection(client_socket, their_addr);
         } // while
 
         return 0;
@@ -114,13 +130,24 @@ int check(int exp, const char *msg)
         return exp;
 }
 
-void handle_connection(int client_socket)
+void *handle_connection(void* arg)
 {
+        thread_client_address* args = static_cast<thread_client_address*>(args);
+        int client_socket = args->_client_socket;
+        SAS their_addr = args->_their_addr;
+
         char buffer[BUFSIZE]; // The size of each buffer we will read
         size_t bytes_read;
         int msgsize = 0;
         char actualpath[PATH_MAX + 1];  // +1 is for the null termination character.
+        char s[INET6_ADDRSTRLEN];  // taking the maximum size of an address
 
+        // prints the client address:
+        inet_ntop(their_addr.ss_family,
+                get_in_addr((SA*)&their_addr),
+                s, sizeof(s));
+        
+        std::cout << "server: got connection from " << s << '\n' << std::endl;
 
         // read the client's message -- the name of the file to read
 
@@ -160,7 +187,7 @@ void handle_connection(int client_socket)
         {
         std::cout << "ERROR: Bad path " << buffer << std::endl;
         close(client_socket);
-        return;
+        return NULL;
         }
 
 
@@ -170,7 +197,7 @@ void handle_connection(int client_socket)
         {
         std::cout << "ERROR(open): " << buffer << std::endl;
         close(client_socket);
-        return;
+        return NULL;
         }
 
         //sleep(1);
