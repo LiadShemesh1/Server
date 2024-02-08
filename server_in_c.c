@@ -7,19 +7,20 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <limits.h>
-#include <iostream>
+#include <linux/limits.h>
 #include <netdb.h>
 
-#define SERVERPORT "8989"  // the port users will be connecting to
+#define SERVERPORT 8989  // the port users will be connecting to
 #define BUFSIZE 4096  //todo why this size???
 #define SOCKETERROR (-1)
-#define SERVER_BACKLOG 100 // how many pending connections queue will hold, kind of useless...
+#define SERVER_BACKLOG 1 // how many pending connections queue will hold
 
 
 // typedef allows us to use these, with a more meaningful name
 typedef struct sockaddr SA;
 typedef struct sockaddr_storage SAS; 
 typedef struct addrinfo ADDINFO;
+typedef struct sockaddr_in SA_IN;
 
 // here for linking (or compiling), actual implimintation is down.
 void handle_connection(int client_socket);
@@ -27,82 +28,45 @@ void handle_connection(int client_socket);
 //seccses and failing (-1). 
 int check(int exp, const char *msg);
 
-void *get_in_addr(struct sockaddr *sa);
-
 int main(int argc , char **argv)
 {
 
-        int server_socket, client_socket; // client_socket not sure yet
-        socklen_t addr_size;
-        SAS their_addr;
-        ADDINFO hints, *res;
-        char s[INET6_ADDRSTRLEN];  // taking the maximum size of an address
+    int server_socket, client_socket; // client_socket not sure yet
+    SA_IN server_addr, client_addr;
+    socklen_t addr_size;
+    
+    check((server_socket = socket(AF_INET, SOCK_STREAM, 0)), 
+            "Failed to create socket");
+    
 
-        // first, load up address structs with getaddrinfo():
-        memset(&hints, 0, sizeof(hints)); // zero out hints; 
-        //memset ensures that the structure is properly initialized before setting specific fields, 
-        //reducing the chances of encountering bugs related to uninitialized memory.
-        hints.ai_family = AF_INET;       // use IPv4
-        hints.ai_socktype = SOCK_STREAM; // TCP
-        hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(SERVERPORT);     // short, network byte order
 
 
-        // When successful, getaddrinfo() returns 0 and a pointer to a linked list of one or more
-        // addrinfo structures through the res argument.
-        getaddrinfo(NULL, SERVERPORT, &hints, &res);
+    check(bind(server_socket, (SA*)&server_addr, sizeof(server_addr)), 
+            "Bind Failed!");  
+    
+    check(listen(server_socket, SERVER_BACKLOG),
+            "Listen Failed");
+
+    
+    while(true)
+    {
+        printf("waiting for connections... \n");
+        addr_size = sizeof(SA_IN); // chaeck
         
-        // craete the socket using the *res which points to hints with the parameters above:
-        check((server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)), 
-                "Failed to create socket");
+        check(client_socket = 
+                accept(server_socket, (SA*)&client_addr, &addr_size),
+                "Accept Faild");
+        printf("Connected \n");
         
-        // in case of "address already in use":
-        // int yes=1;
-        // if (setsockopt(server_socket,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes) == -1) {
-        //         perror("setsockopt");
-        //         exit(1);
-        // }    
 
-        // bind it to the port we passed in to getaddrinfo():
-        check(bind(server_socket, res->ai_addr, res->ai_addrlen), 
-                "Bind Failed");
+        // do whatever we want with the connection:
+        handle_connection(client_socket);
+    } // while
 
-        check(listen(server_socket, SERVER_BACKLOG),
-                "Listen Failed");
-
-        freeaddrinfo(res); // free the linked-list
-        
-        while(true)
-        {
-                std::cout << "waiting for connections... \n" << std::endl;
-                addr_size = sizeof(their_addr); // chaeck
-                
-                check(client_socket = 
-                        accept(server_socket, (SA*)&their_addr, &addr_size),
-                        "Accept Faild");
-                std::cout << "Connected \n" << std::endl;
-                
-                // // prints the client address:
-                // inet_ntop(their_addr.ss_family,
-                //         get_in_addr((SA*)&their_addr),
-                //         s, sizeof(s));
-                
-                // std::cout << "server: got connection from " << s << '\n' << std::endl;
-
-                // do whatever we want with the connection:
-                handle_connection(client_socket);
-        } // while
-
-        return 0;
-}
-
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(SA *sa)
-{
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+    return 0;
 }
 
 int check(int exp, const char *msg)
@@ -143,7 +107,8 @@ void handle_connection(int client_socket)
         check(bytes_read, "recive error");
         buffer[msgsize-1] = 0; //null terminate the message and remove the \n
 
-        std::cout << "REQUEST: " << buffer << std::endl;
+
+        printf("REQUEST: %s\n", buffer);
 
         fflush(stdout); // makes sure that all the recived data was written.
         // fflush(stdout) checks if there are any data in the buffer that should be written and if so,
@@ -158,7 +123,7 @@ void handle_connection(int client_socket)
         //need to replay with an http error 404 if happened
         if(realpath(buffer, actualpath) == NULL)
         {
-        std::cout << "ERROR: Bad path " << buffer << std::endl;
+        printf("ERROR(bad path): %s\n", buffer);
         close(client_socket);
         return;
         }
@@ -168,20 +133,18 @@ void handle_connection(int client_socket)
         FILE *fp = fopen(actualpath, "r");
         if(fp == NULL)
         {
-        std::cout << "ERROR(open): " << buffer << std::endl;
+        printf("ERROR(open): %s\n", buffer);
         close(client_socket);
         return;
         }
 
-        //sleep(1);
-
         //read file contents and send them to client
         //should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
         while((bytes_read = fread(buffer, 1, BUFSIZE, fp)) > 0) {
-                std::cout << "sending " << bytes_read << "bytes" << std::endl;
-                write(client_socket, buffer, bytes_read);
+            printf("Sending %zu bytes\n", bytes_read);
+            write(client_socket, buffer, bytes_read);
         }
         close(client_socket);
         fclose(fp);
-        std::cout << "closing connection" << std::endl;
+        printf("closing connection\n");
 }
