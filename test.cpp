@@ -17,7 +17,7 @@
 #include <string>
 
 #define SERVERPORT "8989"  // the port users will be connecting to
-#define BUFSIZE 4096  //todo why this size???
+#define BUFSIZE 4096
 #define SOCKETERROR (-1)
 #define SERVER_BACKLOG 100 // how many pending connections queue will hold, kind of useless...
 
@@ -28,7 +28,7 @@ typedef struct sockaddr_storage SAS;
 typedef struct addrinfo ADDINFO;
 
 // a struct used to pass argument to thread.
-struct thread_client_address{
+struct client_socket_and_address{
         int _client_socket;
         SAS _their_addr;
 };
@@ -36,18 +36,13 @@ struct thread_client_address{
 
 // here for linking (or compiling), actual implimintation is down.
 void *handle_connection(void* arg);
-/* chack is a general "catch error" function. most of the build in socket function return the same values for 
-seccses and failing (-1). */ 
 int check(int exp, const char *msg);
-
 void *get_in_addr(struct sockaddr *sa);
-// signalHandler will handle signals such as unexpected disconnect socket.
 void signalHandler(int signal);
 
 int main(int argc , char **argv)
 {
-
-        int server_socket, client_socket; // client_socket not sure yet
+        int server_socket, client_socket, gai;
         socklen_t addr_size;
         SAS their_addr;
         ADDINFO hints, *res;
@@ -60,16 +55,20 @@ int main(int argc , char **argv)
 
         // first, load up address structs with getaddrinfo():
         memset(&hints, 0, sizeof(hints)); // zero out hints; 
-        //memset ensures that the structure is properly initialized before setting specific fields, 
-        //reducing the chances of encountering bugs related to uninitialized memory.
+        /*memset ensures that the structure is properly initialized before setting specific fields, 
+        reducing the chances of encountering bugs related to uninitialized memory.*/
         hints.ai_family = AF_INET;       // use IPv4
         hints.ai_socktype = SOCK_STREAM; // TCP
         hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
 
-        // When successful, getaddrinfo() returns 0 and a pointer to a linked list of one or more
-        // addrinfo structures through the res argument.
-        getaddrinfo(NULL, SERVERPORT, &hints, &res);
+        /* When successful, getaddrinfo() returns 0 and a pointer to a linked list of one or more
+        addrinfo structures through the res argument.*/
+        if (gai = getaddrinfo(NULL, SERVERPORT, &hints, &res) != 0) {
+                std::cerr << "getaddrinfo error: " << gai_strerror(gai) << "\n";
+                exit(EXIT_FAILURE);
+        }
+        
         
         // craete the socket using the *res which points to hints with the parameters above:
         check((server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)), 
@@ -104,7 +103,7 @@ int main(int argc , char **argv)
                 pthread_t ptid; 
                 // start mutex:
                 //pthread_mutex_lock(&mutex);
-                thread_client_address *thread_args = new thread_client_address({client_socket, their_addr});
+                client_socket_and_address *thread_args = new client_socket_and_address({client_socket, their_addr});
 
                 //create a thread to handle the connection passing multipule argumentsusing a struct:
                 pthread_create(&ptid, NULL, handle_connection, thread_args);
@@ -131,8 +130,8 @@ void *get_in_addr(SA *sa)
 }
 
 
-// a check function that takes advantage of the fact that most socket related function fail behavior are the same
-// if an error occured it prints the error. 
+/* a check function that takes advantage of the fact that most socket related function fail behavior are the same
+if an error occured it prints the error. */
 int check(int exp, const char *msg)
 {       
         if(exp == SOCKETERROR){
@@ -142,6 +141,7 @@ int check(int exp, const char *msg)
         return exp;
 }
 
+// signalHandler will handle signals such as unexpected disconnect socket.
 void signalHandler(int signal) {
         const char *msg1;
         if (signal == SIGPIPE){
@@ -159,7 +159,7 @@ void signalHandler(int signal) {
 void *handle_connection(void* arg)
 {
         // unpack my args from the struct, explicit conversiob from void* to my struct pointer.
-        thread_client_address *my_args = (thread_client_address*)arg;
+        client_socket_and_address *my_args = (client_socket_and_address*)arg;
         int client_socket = my_args->_client_socket;
         SAS their_addr = my_args->_their_addr;
         delete my_args; // not needed anymore.
@@ -168,7 +168,7 @@ void *handle_connection(void* arg)
         size_t bytes_read;
         int msgsize = 0;
         char actualpath[PATH_MAX + 1];  // +1 is for the null termination character.
-        char s[INET6_ADDRSTRLEN];  // taking the maximum size of an address
+        char s[INET_ADDRSTRLEN];  // space to hold the IPv4 string
 
         // prints the client address:
         inet_ntop(their_addr.ss_family,
@@ -201,15 +201,9 @@ void *handle_connection(void* arg)
         std::cout << "REQUEST: " << buffer << std::endl;
 
         fflush(stdout); // makes sure that all the recived data was written.
-        // fflush(stdout) checks if there are any data in the buffer that should be written and if so,
-        // the underlying syscall is used to write the data to the OS.
-        /*
-        fflush() is typically used for output stream only. Its purpose is to clear (or flush)
-        the output buffer and move the buffered data to console (in case of stdout) 
-        or disk (in case of file output stream)
-        */
 
-        //validity check, checks if the file exist as well
+        //validity check, checks if the file exist as well, make the path 
+
         //need to replay with an http error 404 if happened todo
         if(realpath(buffer, actualpath) == NULL)
         {
@@ -231,7 +225,7 @@ void *handle_connection(void* arg)
         sleep(1);  // test for a case of a slow disk or remote resver.
 
         //read file contents and send them to client
-        //should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
+        //todo should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
         while((bytes_read = fread(buffer, 1, BUFSIZE, fp)) > 0) {
                 std::cout << "sending " << bytes_read << "bytes" << std::endl;
                 

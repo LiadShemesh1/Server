@@ -12,4 +12,46 @@ sends to your program to indicate that a pipe or socket on which your program is
 */
 there for we use signal:
 signal (or sigaction) is a global variable so we can define it once at the begining of the program.
-     
+
+
+why bufsize is 4096:
+Files are already buffered by the file system cache. You just need to pick a buffer size that doesn't
+force FileStream to make the native Windows ReadFile() API call to fill the buffer too often. 
+Don't go below a kilobyte, more than 16 KB is a waste of memory and unfriendly to the CPU's L1 cache 
+(typically 16 or 32 KB of data).
+
+4 KB is a traditional choice, even though that will exactly span a virtual memory page only ever by accident. 
+It is difficult to profile; you'll end up measuring how long it takes to read a cached file. Which runs
+at RAM speeds, 5 gigabytes/sec and up if the data is available in the cache. It will be in the cache the
+second time you run your test, and that won't happen in a production environment too often. File I/O is 
+completely dominated by the disk drive or the NIC and is glacially slow, copying the data is peanuts. 
+4 KB will work fine. 
+
+
+when does the getaddrinfo(), might returns a list of address structures.
+so we really need to loop through them?? in the man getaddrinfo():
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        sfd = socket(rp->ai_family, rp->ai_socktype,
+                rp->ai_protocol);
+        if (sfd == -1)
+            continue;
+
+        if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
+            break;                  /* Success */
+
+        close(sfd);
+    }
+** if we are a client and we try to connect using getaddrinfo() the first argument is "node" which 
+can be a "www.example.com" or some IP address. in that case we can get in return  several options
+to connect to (don't sure why!!!) and we can loop throgh them and try to bind until we secceed.
+
+
+
+fflush(stdout):
+fflush(stdout) checks if there are any data in the buffer that should be written and if so,
+the underlying syscall is used to write the data to the OS.
+    /*
+    fflush() is typically used for output stream only. Its purpose is to clear (or flush)
+    the output buffer and move the buffered data to console (in case of stdout) 
+    or disk (in case of file output stream)
+    */
