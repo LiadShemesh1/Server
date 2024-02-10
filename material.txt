@@ -1,1 +1,11 @@
-text
+write(2) and send is the same when flag is 0.
+
+
+/*
+received signal SIGPIPE, Broken pipe," typically occurs when you try to write to a socket 
+that has been closed by the other end (in this case, the client). It's a signal that the operating system
+sends to your program to indicate that a pipe or socket on which your program is writing has been closed.
+*/
+there for we use signal:
+signal (or sigaction) is a global variable so we can define it once at the begining of the program.
+     

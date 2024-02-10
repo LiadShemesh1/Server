@@ -11,6 +11,8 @@
 #include <netdb.h>
 #include <pthread.h>
 
+#include <errno.h>
+#include <signal.h>
 
 #define SERVERPORT "8989"  // the port users will be connecting to
 #define BUFSIZE 4096  //todo why this size???
@@ -29,13 +31,16 @@ struct thread_client_address{
         SAS _their_addr;
 };
 
+
 // here for linking (or compiling), actual implimintation is down.
 void *handle_connection(void* arg);
-// chack is a general "catch error" function. most of the build in socket function return the same values for 
-//seccses and failing (-1). 
+/* chack is a general "catch error" function. most of the build in socket function return the same values for 
+seccses and failing (-1). */ 
 int check(int exp, const char *msg);
 
 void *get_in_addr(struct sockaddr *sa);
+// signalHandler will handle signals such as unexpected disconnect socket.
+void signalHandler(int signal);
 
 int main(int argc , char **argv)
 {
@@ -44,8 +49,12 @@ int main(int argc , char **argv)
         socklen_t addr_size;
         SAS their_addr;
         ADDINFO hints, *res;
-        pthread_t ptid; 
-        pthread_mutex_t mutex;
+        pthread_mutex_t mutex; // maybe should be in the while loop...??
+        // signal handler using sigaction:
+        struct sigaction sa;
+        sa.sa_handler = signalHandler;
+        // Set up sigaction handler for SIGPIPE == Client disconnected unexpectedly.
+        sigaction(SIGPIPE, &sa, NULL);
 
         // first, load up address structs with getaddrinfo():
         memset(&hints, 0, sizeof(hints)); // zero out hints; 
@@ -63,13 +72,13 @@ int main(int argc , char **argv)
         // craete the socket using the *res which points to hints with the parameters above:
         check((server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol)), 
                 "Failed to create socket");
-        
-        // in case of "address already in use":
-        // int yes=1;
-        // if (setsockopt(server_socket,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes) == -1) {
-        //         perror("setsockopt");
-        //         exit(1);
-        // }    
+         
+        // prevents cases of "address already in use":
+        int yes=1; 
+        if(setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(yes))) {
+                perror("setsockopt");
+                exit(EXIT_FAILURE);
+        }
 
         // bind it to the port we passed in to getaddrinfo():
         check(bind(server_socket, res->ai_addr, res->ai_addrlen), 
@@ -90,24 +99,22 @@ int main(int argc , char **argv)
                         "Accept Faild");
                 std::cout << "Connected \n" << std::endl;
                 
-
+                pthread_t ptid; 
                 // start mutex:
-                pthread_mutex_lock(&mutex);
+                //pthread_mutex_lock(&mutex);
+                thread_client_address *thread_args = new thread_client_address({client_socket, their_addr});
 
-                thread_client_address thread_args = {client_socket, their_addr};
+                //create a thread to handle the connection passing multipule argumentsusing a struct:
+                pthread_create(&ptid, NULL, handle_connection, thread_args);
 
-                //create a thread to handle the connection:
-                pthread_create(&ptid, NULL, handle_connection, &thread_args);
-
-                pthread_join(ptid, nullptr);
                 //End mutex:
-                pthread_mutex_unlock(&mutex);
-                std::cout << "thread \n" << std::endl;
+                //pthread_mutex_unlock(&mutex);
 
-                // do whatever we want with the connection:
-                //handle_connection(client_socket, their_addr);
+                // waits for the thread to finish, and our case terutn NULL from the handle_connection function
+                //should be outside of mutex....?
+                //pthread_join(ptid, nullptr);
+
         } // while
-
         return 0;
 }
 
@@ -121,8 +128,11 @@ void *get_in_addr(SA *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+
+// a check function that takes advantage of the fact that most socket related function fail behavior are the same
+// if an error occured it prints the error. 
 int check(int exp, const char *msg)
-{
+{       
         if(exp == SOCKETERROR){
                 perror(msg);
                 exit(1);
@@ -130,11 +140,22 @@ int check(int exp, const char *msg)
         return exp;
 }
 
+void signalHandler(int signal) {
+    if (signal == SIGPIPE) {
+        // Handle broken pipe error (code=141), unexpected client disconnected.
+        std::cerr << "Client disconnected unexpectedly." << std::endl;
+    }
+    // write to a log file the error.
+}
+
+
 void *handle_connection(void* arg)
 {
-        thread_client_address* args = static_cast<thread_client_address*>(args);
-        int client_socket = args->_client_socket;
-        SAS their_addr = args->_their_addr;
+        // unpack my args from the struct, explicit conversiob from void* to my struct pointer.
+        thread_client_address *my_args = (thread_client_address*)arg;
+        int client_socket = my_args->_client_socket;
+        SAS their_addr = my_args->_their_addr;
+        delete my_args; // not needed anymore.
 
         char buffer[BUFSIZE]; // The size of each buffer we will read
         size_t bytes_read;
@@ -182,7 +203,7 @@ void *handle_connection(void* arg)
         */
 
         //validity check, checks if the file exist as well
-        //need to replay with an http error 404 if happened
+        //need to replay with an http error 404 if happened todo
         if(realpath(buffer, actualpath) == NULL)
         {
         std::cout << "ERROR: Bad path " << buffer << std::endl;
@@ -200,15 +221,25 @@ void *handle_connection(void* arg)
         return NULL;
         }
 
-        //sleep(1);
+        sleep(1);  // test for a case of a slow disk or remote resver.
 
         //read file contents and send them to client
         //should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
+
         while((bytes_read = fread(buffer, 1, BUFSIZE, fp)) > 0) {
                 std::cout << "sending " << bytes_read << "bytes" << std::endl;
-                write(client_socket, buffer, bytes_read);
+                
+                // if write failed, most likely that a SIGPIPE (Client disconnected unexpectedly) occured so we done with this client.
+                if(write(client_socket, buffer, bytes_read) < 0){
+                        close(client_socket);
+                        fclose(fp);
+                        return NULL;
+                } 
+
         }
+
         close(client_socket);
         fclose(fp);
         std::cout << "closing connection" << std::endl;
+        return NULL;
 }
