@@ -10,9 +10,11 @@
 #include <iostream>
 #include <netdb.h>
 #include <pthread.h>
-
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
+#include <string>
 
 #define SERVERPORT "8989"  // the port users will be connecting to
 #define BUFSIZE 4096  //todo why this size???
@@ -141,11 +143,14 @@ int check(int exp, const char *msg)
 }
 
 void signalHandler(int signal) {
-    if (signal == SIGPIPE) {
+        if (signal == SIGPIPE){
+        const char *msg1 = "Client disconnected unexpectedly.\n";
         // Handle broken pipe error (code=141), unexpected client disconnected.
-        std::cerr << "Client disconnected unexpectedly." << std::endl;
-    }
-    // write to a log file the error.
+        int file = open("log.txt", O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+        write(file, msg1, strlen(msg1));
+        // write to the terminal as well:
+        write(STDOUT_FILENO, msg1, strlen(msg1));
+        }
 }
 
 
