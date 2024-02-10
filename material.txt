@@ -1,6 +1,10 @@
 write(2) and send is the same when flag is 0.
 
 
+we didn't use fwrite() because fwrite  While it can be used with sockets, it adds an additional layer
+of buffering that might not be desirable in network programming where you typically want more control 
+over when data is actually sent over the network.
+
 /*
 received signal SIGPIPE, Broken pipe," typically occurs when you try to write to a socket 
 that has been closed by the other end (in this case, the client). It's a signal that the operating system

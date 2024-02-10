@@ -143,14 +143,16 @@ int check(int exp, const char *msg)
 }
 
 void signalHandler(int signal) {
+        const char *msg1;
         if (signal == SIGPIPE){
-        const char *msg1 = "Client disconnected unexpectedly.\n";
+        msg1 = "Client disconnected unexpectedly.\n";
         // Handle broken pipe error (code=141), unexpected client disconnected.
+        }
         int file = open("log.txt", O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
         write(file, msg1, strlen(msg1));
+        close(file);
         // write to the terminal as well:
         write(STDOUT_FILENO, msg1, strlen(msg1));
-        }
 }
 
 
@@ -230,7 +232,6 @@ void *handle_connection(void* arg)
 
         //read file contents and send them to client
         //should limit the client to certain files....!  maybe check if the path as a char or string containing some name then allow otherwise return 404 or message to deny
-
         while((bytes_read = fread(buffer, 1, BUFSIZE, fp)) > 0) {
                 std::cout << "sending " << bytes_read << "bytes" << std::endl;
                 
