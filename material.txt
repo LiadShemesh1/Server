@@ -55,3 +55,21 @@ the underlying syscall is used to write the data to the OS.
     the output buffer and move the buffered data to console (in case of stdout) 
     or disk (in case of file output stream)
     */
+
+
+string -> const char* :
+std::string str1 = "hey";
+1) str1.c_str();
+2) &str1[0];
+
+
+to allocate on the stack dynamiclly:
+use the function 'alloca' which "alloca - allocate memory that is automatically freed"
+void *alloca(size_t size);
+
+int length; //non-const
+length = mylen(); // a funcion that returns an int.
+char* message = (char *)alloca(length * sizeof(cahr));
+// if length is 2...:
+message[0] = 'a';
+message[1] = 'b';
