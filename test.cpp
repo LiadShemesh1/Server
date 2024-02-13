@@ -142,17 +142,19 @@ int check(int exp, const char *msg)
 }
 
 // signalHandler will handle signals such as unexpected disconnect socket.
+// TODO: send the error with the client ip, so we can act against it if the behaviour happend again
+// its not an option to pass 2 args to the function, stackoverflow suggests to use global var.
 void signalHandler(int signal) {
-        const char *msg1;
+        std::string msg1;
         if (signal == SIGPIPE){
         msg1 = "Client disconnected unexpectedly.\n";
         // Handle broken pipe error (code=141), unexpected client disconnected.
         }
         int file = open("log.txt", O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
-        write(file, msg1, strlen(msg1));
+        write(file, msg1.c_str(), msg1.length());
         close(file);
         // write to the terminal as well:
-        write(STDOUT_FILENO, msg1, strlen(msg1));
+        write(STDOUT_FILENO, msg1.c_str(), msg1.length());
 }
 
 

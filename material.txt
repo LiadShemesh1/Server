@@ -73,3 +73,29 @@ char* message = (char *)alloca(length * sizeof(cahr));
 // if length is 2...:
 message[0] = 'a';
 message[1] = 'b';
+
+
+
+open a file c++ style (slower than the C way of doing it):
+#include <iostream>
+#include <fstream>
+#include <string>
+    // Open the file for reading
+    std::ifstream file("example.txt");
+
+    // Check if the file is opened successfully
+    if (!file.is_open()) {
+        std::cerr << "Error opening the file." << std::endl;
+        return 1;
+    }
+
+    std::string line;
+    // Read and print each line of the file
+    while (std::getline(file, line)) {
+        std::cout << line << std::endl;
+    }
+
+    // Close the file
+    file.close();
+
+
