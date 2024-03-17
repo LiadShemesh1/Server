@@ -63,7 +63,7 @@ def connect_to_server(number):
 threads = []
 
 for i in range(1):
-    t = threading.Thread(target=connect_to_server(6))
+    t = threading.Thread(target=connect_to_server(6)) # 6 is the biggest file
     threads.append(t)
     t.start()
 

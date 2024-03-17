@@ -15,11 +15,13 @@
 #include <errno.h>
 #include <signal.h>
 #include <string>
+#include <time.h>
 
 #define SERVERPORT "8989"  // the port users will be connecting to
 #define BUFSIZE 4096
 #define SOCKETERROR (-1)
 #define SERVER_BACKLOG 100 // how many pending connections queue will hold, kind of useless...
+#define TimeLen 21 // maximum length of time in the selected format with a white space at the end.
 
 
 // typedef allows us to use these, with a more meaningful name
@@ -28,10 +30,13 @@ typedef struct sockaddr_storage SAS;
 typedef struct addrinfo ADDINFO;
 
 // a struct used to pass argument to thread.
-struct client_socket_and_address{
+typedef struct {
         int _client_socket;
         SAS _their_addr;
-};
+} client_socket_and_address;
+
+// maybe declere the lock close to the function as it only used there?
+pthread_mutex_t time_lock = PTHREAD_MUTEX_INITIALIZER; //lock for the timeThreadSafe function.
 
 
 // here for linking (or compiling), actual implimintation is down.
@@ -39,6 +44,7 @@ void *handle_connection(void* arg);
 int check(int exp, const char *msg);
 void *get_in_addr(struct sockaddr *sa);
 void signalHandler(int signal);
+void timeThreadSafe(char *msg, int size);
 
 int main(int argc , char **argv)
 {
@@ -92,7 +98,7 @@ int main(int argc , char **argv)
         
         while(true)
         {       
-                std::cout << "waiting for connections... \n" << std::endl;
+                std::cout << "waiting for connections..." << std::endl;
                 addr_size = sizeof(their_addr); // chaeck
                 
                 check(client_socket = 
@@ -141,20 +147,38 @@ int check(int exp, const char *msg)
         return exp;
 }
 
+void timeThreadSafe(char *msg, int size){
+        pthread_mutex_lock(&time_lock);
+        time_t t = time(NULL);
+        struct tm date;
+        if(gmtime_r(&t, &date) == NULL) {t = 0;} //making sure we have some time to write.
+        localtime_r(&t, &date); // converting to local mechine timezone.
+
+        strftime(msg, size, "%d-%m-%Y %H:%M:%S ", &date);
+        pthread_mutex_unlock(&time_lock);
+}
+
 // signalHandler will handle signals such as unexpected disconnect socket.
-// TODO: send the error with the client ip, so we can act against it if the behaviour happend again
+// TODO: send the error with the client ip\mac, so we can act against it if the behaviour happend again
 // its not an option to pass 2 args to the function, stackoverflow suggests to use global var.
 void signalHandler(int signal) {
-        std::string msg1;
+        char msg1[70];
+
+        timeThreadSafe(msg1, TimeLen); // writing the current time to the begining of msg1.
+
+        // lock() - maybe lock the from the beginning?
         if (signal == SIGPIPE){
-        msg1 = "Client disconnected unexpectedly.\n";
+        sprintf(msg1 + strlen(msg1), "Client disconnected unexpectedly.\n");
         // Handle broken pipe error (code=141), unexpected client disconnected.
         }
-        int file = open("log.txt", O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
-        write(file, msg1.c_str(), msg1.length());
+
+        int file = open("log.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR); //O_APPEND - withut O_APPEND it will always write to the begining of the file (overwriting the existing text) 
+        write(file, msg1, strlen(msg1));
         close(file);
         // write to the terminal as well:
-        write(STDOUT_FILENO, msg1.c_str(), msg1.length());
+        write(STDOUT_FILENO, msg1, strlen(msg1));
+
+        // unlock()
 }
 
 

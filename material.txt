@@ -99,3 +99,39 @@ open a file c++ style (slower than the C way of doing it):
     file.close();
 
 
+
+
+
+
+
+
+
+
+void signalHandler(int signal) {
+        //TODO lock():
+        char msg1[70];
+
+        // Time:
+        time_t t = time(NULL);
+        struct tm date;
+        if(gmtime_r(&t, &date) == NULL) {t = 0;} //making sure we have some time to write.
+        localtime_r(&t, &date); // converting to local mechine timezone.
+
+        char currTime[TimeLen];
+        strftime(currTime, TimeLen, "%d-%m-%Y %H:%M:%S", &date);
+        // :Time
+
+        if (signal == SIGPIPE){
+        strcpy(msg1, "Client disconnected unexpectedly. ");
+        // Handle broken pipe error (code=141), unexpected client disconnected.
+        }
+
+        sprintf(msg1 + strlen(msg1), "%s", currTime);
+        msg1[strlen(msg1)+1] = '\n';
+
+        int file = open("log.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR); //O_APPEND - withut O_APPEND it will always write to the begining of the file (overwriting the existing text) 
+        write(file, msg1, strlen(msg1));
+        close(file);
+        // write to the terminal as well:
+        write(STDOUT_FILENO, msg1, strlen(msg1));
+}
